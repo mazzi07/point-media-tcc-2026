@@ -1,26 +1,34 @@
 import { useEffect, useState } from 'react'
 import { Box, Button, Container, Flex, Heading, Text } from '@chakra-ui/react'
+import { AuthPanel } from '../auth/AuthPanel'
 
 type ConnectionStatus = 'loading' | 'up' | 'error'
 
+// Mostra a conexão com o backend e o acesso à conta
 export function HealthPage() {
   const [status, setStatus] = useState<ConnectionStatus>('loading')
   const [attempt, setAttempt] = useState(0)
 
+  // Verifica a conexão ao abrir a tela ou tentar novamente
   useEffect(() => {
     const controller = new AbortController()
 
+    // Consulta a saúde do backend pelo proxy da aplicação
     async function checkHealth() {
+      // Mostra que a consulta de saúde está em andamento
       setStatus('loading')
 
       try {
+        // Consulta o backend pelo caminho encaminhado pelo Vite
         const response = await fetch('/api/health', {
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]),
           headers: { Accept: 'application/json' },
         })
+        // Recusa respostas HTTP que indicam falha
         if (!response.ok) throw new Error('Não foi possível consultar o backend.')
 
         const data: unknown = await response.json()
+        // Confere o formato e o estado devolvidos pelo backend
         if (
           typeof data !== 'object' || data === null ||
           !('status' in data) || data.status !== 'UP'
@@ -28,13 +36,17 @@ export function HealthPage() {
           throw new Error('Resposta de saúde inesperada.')
         }
 
+        // Confere o formato e o estado devolvidos pelo backend
         if (!controller.signal.aborted) setStatus('up')
+      // Mostra indisponibilidade sem atualizar uma tela já fechada
       } catch {
+        // Confere o formato e o estado devolvidos pelo backend
         if (!controller.signal.aborted) setStatus('error')
       }
     }
 
     void checkHealth()
+    // Cancela a consulta quando a tela é desmontada
     return () => controller.abort()
   }, [attempt])
 
@@ -44,6 +56,7 @@ export function HealthPage() {
     error: 'Backend indisponível',
   }
 
+  // Exibe a verificação de conexão e o painel da conta
   return (
     <Box minH="100vh">
       <Flex h="2" aria-hidden="true">
@@ -75,6 +88,7 @@ export function HealthPage() {
             Verificar novamente
           </Button>
         </Box>
+        <AuthPanel />
       </Container>
     </Box>
   )

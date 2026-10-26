@@ -1,5 +1,6 @@
 import { createSystem, defaultConfig, defineConfig } from '@chakra-ui/react'
 
+// Centraliza as cores institucionais e a aparência da aplicação
 const config = defineConfig({
   theme: {
     tokens: {
@@ -11,6 +12,7 @@ const config = defineConfig({
       },
     },
   },
+  // Mantém a página com o tema claro aprovado
   globalCss: {
     'html, body': {
       minHeight: '100%',
@@ -21,4 +23,5 @@ const config = defineConfig({
   },
 })
 
+// Combina os tokens da aplicação com o tema do Chakra
 export const system = createSystem(defaultConfig, config)

@@ -13,6 +13,7 @@ import static org.mockito.Mockito.mock;
 class HealthControllerTest {
 
     @Test
+    // Confere a resposta de falha sem expor detalhes do banco
     void reportsDatabaseFailureWithoutExposingInternalDetails() {
         var databaseCheck = mock(MySqlConnectionCheck.class);
         doThrow(new CannotGetJdbcConnectionException("Detalhe interno de teste"))

@@ -21,6 +21,7 @@ class HealthEndpointTest {
     private int port;
 
     @Test
+    // Confere a saúde da aplicação por uma requisição HTTP real
     void returnsApplicationHealthOverHttp() throws Exception {
         try (var client = HttpClient.newHttpClient()) {
             var request = HttpRequest.newBuilder()

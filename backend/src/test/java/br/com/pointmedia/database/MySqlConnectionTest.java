@@ -28,6 +28,7 @@ class MySqlConnectionTest {
     private int port;
 
     @Test
+    // Confere o banco aprovado, a conta da aplicação e a conexão cifrada
     void readsApprovedSchemaThroughAnEncryptedConnection() throws Exception {
         assertThat(jdbcTemplate.queryForObject("SELECT DATABASE()", String.class))
                 .isEqualTo("point_media_dev");

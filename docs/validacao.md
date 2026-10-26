@@ -330,3 +330,143 @@ backend/src/test/java/br/com/pointmedia/health/HealthControllerTest.java
 O arquivo criptografado `.env.mysql-app.xml`, relatórios e logs em `backend/target` e os artefatos normais do frontend ficam locais e ignorados. A única alteração externa ao workspace foi a remoção pontual da cópia privada expressamente autorizada pelo usuário.
 
 A pendência de autenticação foi resolvida e a integração local passou nos testes reais. Permanecem os limites intencionais: TLS local sem validação da identidade do certificado, conta com leitura somente da tabela usada nesta etapa e credencial criptografada não portável entre usuários/computadores. Não há JPA, Hibernate, Flyway, Liquibase, autenticação ou funcionalidades de negócio. Nenhum arquivo dessa integração foi publicado.
+
+## Publicação MySQL e autenticação local — 26/10/2026
+
+Esta seção registra a etapa seguinte. As afirmações de publicação e permissões nas seções anteriores representam o estado histórico de cada validação.
+
+### Integração MySQL publicada
+
+O usuário aprovou a publicação dos dez arquivos da integração JDBC. Foi conferido apenas que o inventário e o histórico continuavam correspondendo ao aprovado; não foram repetidos os builds anteriores antes da publicação. O commit `feat: integra MySQL ao backend`, identificador `e93550eb5eed594831e4c7af04d8a9ccf30ce800`, foi criado em `main` e enviado a `origin/main`. `git ls-remote` confirmou o mesmo identificador no GitHub. O commit inicial foi preservado.
+
+Nenhum commit ou push foi feito para a autenticação descrita abaixo.
+
+### Implementação e segurança
+
+- Dependências novas, gerenciadas pelo Boot 4.1.2: `spring-boot-starter-security` (Security 7.1.2), `spring-boot-starter-validation` e `spring-security-test` somente nos testes. Nenhuma dependência frontend foi acrescentada. Hibernate Validator é o provedor de Bean Validation, sem Hibernate ORM/JPA.
+- `usuarios` utiliza somente a tabela aprovada. O repositório JDBC parametriza consultas e insere exclusivamente `nome`, `email` e `senha_hash`. Os defaults existentes fixam `USUARIO` e ativo; os campos de perfil e atividade não podem ser inseridos pela conta SQL da aplicação.
+- O administrador concedeu apenas `INSERT (nome, email, senha_hash)` sobre `point_media_dev.usuarios`, mantendo o SELECT anterior. A conta continua exigindo SSL e não recebeu UPDATE, DELETE, DDL ou acesso a outras tabelas. O pool deixou de ser somente leitura para permitir o cadastro.
+- Nome, e-mail e senha são validados. Nome e e-mail são aparados, e-mail é normalizado para minúsculas e duplicidade retorna 409. Campos JSON desconhecidos são rejeitados: tentativas de informar RH/GESTOR retornam 400. Senhas usam BCrypt com custo 12, mínimo de 12 caracteres e máximo de 72 bytes UTF-8. Hash e senha nunca integram os DTOs de resposta.
+- Login e logout usam os filtros nativos do Spring Security, sem filtros de autenticação próprios, JWT, OAuth ou HTTP Basic. Login recebe formulário URL-encoded com `email` e `senha` e retorna 204. Usuário inativo e senha incorreta recebem a mesma resposta 401 genérica.
+- Sessões usam JSESSIONID HttpOnly, SameSite=Lax, somente cookie, inatividade de 30 minutos e troca do identificador no login. Secure fica desativado apenas para o HTTP local, configurável por `POINT_MEDIA_COOKIE_SECURE=true` para HTTPS em produção.
+- CSRF permaneceu ativo no cadastro, login e logout, com armazenamento nativo na sessão e token mascarado do Spring. `GET /api/auth/csrf` entrega o token ao cliente. A SPA mantém o token somente em memória e renova após login/logout ou, uma única vez, após um 403 de CSRF. Não utiliza localStorage/sessionStorage nem armazena token de autenticação acessível ao JavaScript.
+- `/api/auth/me` consulta o usuário no banco e retorna somente id, nome, e-mail e perfil. Inexistência/inatividade invalida a sessão. O React confirma o estado pelo backend ao carregar, após login e ao recuperar foco; também oferece uma consulta explícita à sessão.
+- Respostas de erro usam `{status, code, message, errors}`. 401 indica ausência de autenticação ou credenciais inválidas; 403 indica falta de permissão ou CSRF inválido. Erros de banco retornam 503 sem SQL ou detalhes internos.
+- GETs de saúde, CSRF e do namespace futuro `/api/public/**` são públicos. `/api/rh/**` exige RH/GESTOR; `/api/gestao/**` exige GESTOR; demais rotas exigem autenticação. Não foram criados endpoints de RH/gestão: os endpoints de prova dessas políticas existem apenas na classe de teste e não são empacotados na aplicação.
+- Não foi liberado CORS geral. O proxy `/api`, os tokens rosa/azul e o conteúdo da homepage foram preservados. Um painel de acesso foi acrescentado abaixo da verificação de saúde, com cadastro, login, estado autenticado, logout, carregamento, mensagens de campo, falha de conexão e sessão invalidada.
+
+### Testes executados
+
+| Verificação | Resultado real |
+| --- | --- |
+| `AuthSecurityTest`, sem banco | 17 casos passaram, cobrindo cadastro/normalização, duplicidade, BCrypt, validação, limite UTF-8, login, logout, fixação de sessão, CSRF, usuário inativo, consulta da sessão, perfis e falha do banco. |
+| `mvn.cmd verify` com `POINT_MEDIA_MYSQL_TESTS=true` | `BUILD SUCCESS`: 21 testes, 0 falhas, 0 erros, 0 ignorados. Inclui todos os testes anteriores, a suíte de segurança e o novo teste HTTP com persistência MySQL real. Log local em `backend/target/auth-verification.log`. |
+| Teste real `MySqlAuthTest` | Cadastro persistido, senha com BCrypt, duplicidade, tentativa de perfil, CSRF obrigatório/renovado, login inválido/válido, cookie HttpOnly/SameSite, troca real do ID da sessão, `/me`, logout e usuário inativo confirmados. |
+| Modo padrão sem credenciais | Execução direcionada de `MySqlAuthTest,MySqlConnectionTest,HealthEndpointTest`: 1 teste HTTP passou e os 2 testes opt-in foram ignorados, sem conexão externa obrigatória. Log local em `backend/target/auth-default-verification.log`. |
+| `npm.cmd run build` | TypeScript estrito e Vite concluídos; 1963 módulos, build Vite em 597 ms. Nenhum pacote foi atualizado. |
+| Navegador via Vite | Cadastro real de pessoa fictícia, mensagem de senha incorreta, login, usuário/perfil confirmado, sessão mantida após recarregar e logout passaram. |
+| Sessão invalidada no navegador | Apenas o fixture recém-criado foi temporariamente desativado pelo administrador. `/me` invalidou a sessão e a SPA exibiu aviso. Depois da reativação do mesmo fixture, novo login funcionou com renovação automática do CSRF antigo. |
+| Limpeza | O teste real removeu sua linha em `finally`. O usuário fictício do navegador foi removido por e-mail UUID e nome exatos. A contagem de usuários era 0 antes e voltou a 0 ao final. Nenhum usuário existente foi alterado. |
+| Encerramento | Backend e frontend de validação encerrados; portas 8080 e 5173 sem listeners. MySQL permaneceu ativo. |
+
+A primeira rodada identificou dois ajustes: as propriedades de `AuthError` precisavam ser explícitas para o `erasableSyntaxOnly` do TypeScript, e o teste MockMvc precisava informar a validade do cookie recebido para reproduzir a troca de ID de sessão do container. Ambos foram corrigidos. A troca de ID também foi comprovada pelo teste HTTP com cookies reais. A configuração foi simplificada para usar a detecção nativa de UserDetailsService/PasswordEncoder, sem provider redundante.
+
+### Isolamento dos testes MySQL
+
+O teste opt-in gera e-mail UUID em `example.invalid`, confirma que ele não existe e cria exclusivamente esse usuário pelo endpoint público. A conta de aplicação permanece sem UPDATE/DELETE. O login-path administrativo é usado somente no teste para desativar seu próprio fixture e remover exatamente o e-mail criado em `finally`. Não há reset de tabela, DELETE geral, DROP, TRUNCATE ou preparação de schema. O teste de navegador usou outro UUID, com verificação e limpeza específicas. Credenciais administrativas não foram copiadas, impressas ou adicionadas ao workspace.
+
+O teste padrão de segurança usa um repositório simulado somente no contexto `test`; isso não substituiu a validação real. Os endpoints de prova de autorização são exclusivos desse contexto de teste.
+
+### Inventário da autenticação, ainda local
+
+Modificados:
+
+```text
+README.md
+docs/validacao.md
+backend/pom.xml
+backend/src/main/resources/application.properties
+backend/src/main/resources/application-mysql.properties
+frontend/src/features/health/HealthPage.tsx
+```
+
+Criados:
+
+```text
+backend/src/main/java/br/com/pointmedia/auth/AuthController.java
+backend/src/main/java/br/com/pointmedia/auth/AuthService.java
+backend/src/main/java/br/com/pointmedia/config/ApiExceptionHandler.java
+backend/src/main/java/br/com/pointmedia/config/SecurityConfig.java
+backend/src/main/java/br/com/pointmedia/usuarios/Usuario.java
+backend/src/main/java/br/com/pointmedia/usuarios/UsuarioRepository.java
+backend/src/test/java/br/com/pointmedia/auth/AuthSecurityTest.java
+backend/src/test/java/br/com/pointmedia/auth/MySqlAuthTest.java
+frontend/src/features/auth/AuthPanel.tsx
+frontend/src/features/auth/api.ts
+```
+
+O schema oficial continua com SHA-256 `37D548EDA30E9DD6042EC6ABF4C4FFCCA27F4CDD0D0B66F6DA9DA495CB8E2253`. Manifesto e lockfile do frontend também mantiveram os hashes anteriores. Credencial criptografada, logs e captura de validação (`backend/target/auth-ui.png`) permanecem ignorados pelo Git.
+
+Limites intencionais: sessões em memória de uma instância, sem persistência entre reinícios; HTTPS/Secure e validação de identidade TLS do banco necessários para produção; controle de tentativas abusivas deve ser tratado antes de exposição pública. Recuperação de senha, JWT, OAuth e funcionalidades de RH ficam fora do escopo. O índice Git permaneceu vazio e nenhuma alteração da autenticação foi publicada.
+
+## Correções após auditoria de segurança — 26/10/2026
+
+Esta seção complementa o histórico anterior. A autenticação continua exclusivamente local, sem commit ou push.
+
+### Sessão no React
+
+O painel passou a distinguir sessão autenticada, anônima confirmada e não verificável. Timeout, erro de rede e HTTP 503 preservam o último usuário confirmado. A interface informa que os dados são do último acesso confirmado, mantém **Tentar novamente** e **Sair da conta** e não exibe simultaneamente o formulário de login. Somente 401 ou logout confirmado removem o usuário.
+
+Se o login retornar sucesso e a consulta seguinte falhar, o painel apresenta sessão não verificável sem inventar dados do usuário ou concluir que o login falhou. O mesmo cuidado vale para resposta de login perdida por erro de rede. Logout com falha de comunicação mantém a incerteza até uma resposta que confirme a saída ou sessão inválida.
+
+A lógica de transição fica em `frontend/src/features/auth/session.ts`, usada diretamente pelo painel e pelos testes nativos do Node. O cliente HTTP existente foi preservado: CSRF é obtido antes das escritas, descartado após login/logout e renovado na próxima escrita. Apenas rejeição explícita de CSRF permite uma repetição; timeout e 503 não repetem operações automaticamente. Não foram adicionadas dependências.
+
+### Revogação no servidor
+
+`SessionAuthorizationManager` usa a extensão `AuthorizationManager` do Spring Security, sem filtro próprio. Cada requisição protegida verifica no banco se o usuário existe, está ativo e mantém exatamente o mesmo perfil da autenticação. A verificação antecede as regras de RH/GESTOR e não depende de `/api/auth/me`. Divergência invalida a sessão, limpa o contexto e retorna 401, exigindo novo login. Não são atualizadas autoridades silenciosamente.
+
+Indisponibilidade do banco retorna 503 e impede a execução da rota protegida, sem autorizar com as autoridades antigas. A sessão pode ser verificada novamente quando o banco voltar. O logout nativo não exige essa leitura e continua funcionando durante a indisponibilidade. `/me` reutiliza o usuário consultado na autorização da própria requisição, sem segunda consulta JDBC ou cache de permissões entre requisições.
+
+O repositório, schema e privilégios SQL não foram modificados. A conta da aplicação mantém SELECT na tabela `usuarios` e INSERT restrito a `nome`, `email` e `senha_hash`; os testes não concedem novos privilégios.
+
+### Resultados executados
+
+| Verificação | Resultado real |
+| --- | --- |
+| `npm.cmd test` | 11 testes passaram, sem falhas: timeout por AbortSignal, erro de rede, 503, 401, consulta inicial, falha após login confirmado, resposta de login perdida, recuperação, logout e renovação de CSRF. Usa Node e fetch controlado, sem pacotes de teste adicionais. |
+| `npm.cmd run build` | TypeScript e Vite concluídos; 1964 módulos. |
+| `mvn.cmd -B -ntp verify`, sem MySQL | BUILD SUCCESS: 26 casos contabilizados, 24 executados com sucesso e 2 testes MySQL opt-in ignorados. A suíte de segurança passou em 22 casos. Log local: `backend/target/security-corrections-verify.log`. |
+| Novos testes de autorização | Inativação e rebaixamento GESTOR→RH/USUARIO sem `/me` prévio retornam 401 e invalidam a sessão. Novo login já com perfil rebaixado recebe 403 em gestão. Usuário removido também perde a sessão. |
+| Banco indisponível no teste de segurança | A rota protegida retorna 503, sem acesso; a mesma sessão volta a funcionar após recuperação. Logout funciona mesmo com o repositório ainda indisponível. `/me` faz somente uma consulta ao repositório. |
+| `mvn.cmd -B -ntp test '-Dtest=MySqlAuthTest'`, com MySQL | BUILD SUCCESS: 1 teste real passou, sem falhas ou skips. Regressão de cadastro, BCrypt, login, cookies, CSRF, `/me`, logout e inatividade com a conta da aplicação. O fixture UUID do próprio teste foi removido em finally e sua ausência conferida. Log local: `backend/target/security-corrections-mysql.log`. |
+| Interface em navegador Edge temporário | Cinco cenários passaram usando a interface real e respostas HTTP controladas: 503 após login confirmado; recuperação sem novo login; 503 na consulta/logout preservando o usuário; logout confirmado; timeout real de 10 segundos seguido de logout. Nenhum erro React capturado. Sem acesso ao MySQL nesse teste de interface. |
+| Verificação final da interface por foco | Após uma confirmação positiva, um 503 na verificação ao recuperar foco remove o aviso anterior de sessão ativa, preserva o usuário e a opção de sair. Logout confirmado funciona. Vite e navegador temporários encerrados pelo teste. |
+
+A primeira compilação identificou que o nome do atributo usado na anotação `@RequestAttribute` precisava ser uma constante literal; foi corrigido. O teste de recuperação do banco precisou usar `doAnswer` para restabelecer o mock que lançava exceção, sem invocar esse comportamento durante a preparação. As execuções finais acima passaram. A execução inicial do Mockito foi bloqueada na comunicação de anexação do agente pelo ambiente restrito; foi encerrada e repetida em contexto autorizado, sem alteração de configuração do Windows ou dependências.
+
+### Decisões e pendências
+
+O HTTP 409 para e-mail duplicado permanece por decisão explícita no desenvolvimento privado. Esse comportamento permite enumeração de contas e exige mitigação/revisão antes da exposição pública. CSRF não impede um visitante de consultar esse comportamento usando sua própria sessão.
+
+Continuam pendentes, sem implementação nesta tarefa:
+
+- Limites de tentativas de login e cadastro.
+- Limite real de corpo JSON; o limite Tomcat de formulário e as validações de campos não fornecem esse limite.
+- HTTPS e cookie Secure no ambiente de publicação.
+- Verificação da identidade do certificado TLS do MySQL.
+
+### Arquivos desta correção
+
+Modificados: `README.md`, `docs/validacao.md`, `backend/src/main/java/br/com/pointmedia/auth/AuthController.java`, `backend/src/main/java/br/com/pointmedia/config/SecurityConfig.java`, `backend/src/test/java/br/com/pointmedia/auth/AuthSecurityTest.java`, `frontend/src/features/auth/AuthPanel.tsx` e `frontend/package.json`.
+
+Criados: `backend/src/main/java/br/com/pointmedia/auth/SessionAuthorizationManager.java`, `frontend/src/features/auth/session.ts` e `frontend/tests/auth-session.test.ts`.
+
+Não foram alterados schema, versões de dependências, lockfile, credenciais ou o projeto antigo. Não foram adicionadas tabelas, endpoints de produção ou funcionalidades de negócio. As rotas de prova de autorização continuam restritas aos testes.
+
+O hash do SQL oficial permaneceu `37D548EDA30E9DD6042EC6ABF4C4FFCCA27F4CDD0D0B66F6DA9DA495CB8E2253`. `git diff --check` passou e o índice Git permaneceu vazio. Os servidores temporários de validação foram encerrados. Nenhum commit ou push foi realizado.
+
+## Comentários e preparação da publicação da autenticação — 26/10/2026
+
+Os arquivos manuais de Java, TypeScript, HTML, Maven e Properties receberam comentários curtos em português, acima de métodos, ações, decisões, segurança, consultas e testes, sem pontuação final. JSON, lockfiles, artefatos gerados e o schema aprovado não foram comentados. A comparação dos 28 arquivos examinados, desconsiderando somente linhas de comentário, confirmou conteúdo funcional idêntico ao anterior.
+
+A validação única antes da publicação passou: `npm.cmd test` (11 testes), `npm.cmd run build` (TypeScript e Vite) e `mvn.cmd -B -ntp verify` (24 testes executados, 2 MySQL opt-in ignorados, zero falhas/erros). A regressão real MySQL anterior foi preservada e não repetida para comentários. `git ls-remote` confirmou `origin/main` em `e93550eb5eed594831e4c7af04d8a9ccf30ce800` antes da publicação. O SQL mantém o hash aprovado.
