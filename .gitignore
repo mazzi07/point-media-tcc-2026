@@ -1,0 +1,46 @@
+# Dependências, builds e ferramentas locais
+node_modules/
+dist/
+target/
+.cache/
+.tools/
+.npm/
+.m2/
+.temp/
+.tmp/
+tmp/
+temp/
+*.tmp
+*.temp
+hs_err_pid*
+replay_pid*
+*.hprof
+*.tsbuildinfo
+
+# Configuração local e segredos
+.env
+.env.*
+!.env.example
+*.local
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+application-local.properties
+application-local.yml
+application-local.yaml
+settings.xml
+.aws/
+.ssh/
+.npmrc
+
+# Editores e sistema operacional
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+Desktop.ini

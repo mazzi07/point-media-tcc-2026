@@ -1,0 +1,2 @@
+# Preserva os bytes do schema aprovado, inclusive as quebras de linha.
+database/schema.sql -text
