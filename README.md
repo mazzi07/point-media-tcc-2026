@@ -1,6 +1,6 @@
 # Point Media — Banco de Talentos
 
-Base do TCC com React, Spring Boot, MySQL e autenticação por sessão HTTP. Cadastro, login, consulta da sessão e logout estão implementados. Vagas, currículos e candidaturas ainda não foram implementados.
+Base do TCC com React, Spring Boot, MySQL e autenticação por sessão HTTP. Cadastro, login, consulta da sessão e logout estão publicados. O módulo de vagas está implementado localmente para revisão; currículos, candidaturas e matching ficam fora desta etapa.
 
 ## Organização
 
@@ -11,9 +11,15 @@ frontend/
     features/auth/AuthPanel.tsx
     features/auth/api.ts
     features/auth/session.ts
+    features/auth/useSession.ts
+    features/vagas/api.ts
+    features/vagas/VagasPanel.tsx
+    features/vagas/VagaForm.tsx
     features/health/HealthPage.tsx
     main.tsx
   tests/auth-session.test.ts
+  tests/vagas-api.test.ts
+  tests/vagas-ui.test.mjs
 backend/
   pom.xml
   src/main/java/br/com/pointmedia/
@@ -24,6 +30,10 @@ backend/
     auth/SessionAuthorizationManager.java
     usuarios/Usuario.java
     usuarios/UsuarioRepository.java
+    vagas/Vaga.java
+    vagas/VagaController.java
+    vagas/VagaService.java
+    vagas/VagaRepository.java
     config/SecurityConfig.java
     config/ApiExceptionHandler.java
     health/HealthController.java
@@ -34,6 +44,8 @@ backend/
   src/test/java/br/com/pointmedia/database/MySqlConnectionTest.java
   src/test/java/br/com/pointmedia/auth/AuthSecurityTest.java
   src/test/java/br/com/pointmedia/auth/MySqlAuthTest.java
+  src/test/java/br/com/pointmedia/vagas/VagaServiceTest.java
+  src/test/java/br/com/pointmedia/vagas/MySqlVagaTest.java
 database/schema.sql
 docs/validacao.md
 .gitattributes
@@ -43,7 +55,7 @@ README.md
 
 `database/schema.sql` é a fonte oficial do schema candidato para MySQL 8 e permanece intacto. A execução padrão não exige banco; a conexão é ativada somente pelo profile `mysql`. A inicialização automática de SQL está explicitamente desativada (`spring.sql.init.mode=never`). Não são utilizados JPA, Hibernate ORM, Flyway ou Liquibase.
 
-`src/app` concentra a configuração da aplicação. `src/features/health` contém a única tela atual. Os próximos módulos podem ocupar pastas próprias em `features` e pacotes próprios abaixo de `br.com.pointmedia`, sem criar camadas vazias antecipadamente.
+`src/app` concentra a configuração da aplicação. A tela inicial reúne conexão, autenticação e vagas, com cada funcionalidade em sua pasta `features`. O backend mantém os pacotes por funcionalidade abaixo de `br.com.pointmedia`.
 
 ## Versões e dependências
 
@@ -135,7 +147,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Preparação interrompida; não reaplique sem 
 
 A retirada de `IF NOT EXISTS` faz a execução parar se o banco surgir entre a conferência e a criação. Não use `--force`. Não execute o SQL oficial sem adaptação, pois ele nomeia outro banco.
 
-Crie uma conta exclusiva, como `point_media_app` restrita a `localhost`, com senha forte e `REQUIRE SSL`. Os privilégios necessários são `SELECT ON point_media_dev.usuarios` e `INSERT (nome, email, senha_hash)` nessa mesma tabela. Não conceda UPDATE, DELETE, DDL ou privilégios globais. O cadastro não pode inserir `perfil` ou `ativo`: os defaults do schema aprovado fixam `USUARIO` e ativo. Se a conta já existir, não a sobrescreva. O administrador pode usar `CREATE USER ... IDENTIFIED BY RANDOM PASSWORD REQUIRE SSL` e guardar a senha de aplicação de forma privada; a credencial administrativa não deve ser reutilizada.
+Crie uma conta exclusiva, como `point_media_app` restrita a `localhost`, com senha forte e `REQUIRE SSL`. Para autenticação, os privilégios são `SELECT ON point_media_dev.usuarios` e `INSERT (nome, email, senha_hash)` nessa mesma tabela. Não conceda UPDATE ou DELETE em `usuarios`, DDL ou privilégios globais. Os privilégios adicionais de vagas estão descritos abaixo. O cadastro não pode inserir `perfil` ou `ativo`: os defaults do schema aprovado fixam `USUARIO` e ativo. Se a conta já existir, não a sobrescreva. O administrador pode usar `CREATE USER ... IDENTIFIED BY RANDOM PASSWORD REQUIRE SSL` e guardar a senha de aplicação de forma privada; a credencial administrativa não deve ser reutilizada.
 
 Neste ambiente, a ampliação aprovada foi feita somente com:
 
@@ -176,7 +188,7 @@ Não escreva senhas em comandos com valores literais, arquivos compartilhados ou
 Remove-Item Env:SPRING_PROFILES_ACTIVE, Env:POINT_MEDIA_DB_USER, Env:POINT_MEDIA_DB_PASSWORD -ErrorAction SilentlyContinue
 ```
 
-O profile `mysql` consulta `SELECT DATABASE()` e verifica a tabela `usuarios` na inicialização e na saúde. As consultas não retornam dados pessoais e não criam ou modificam tabelas. Não existem endpoints de administração.
+O profile `mysql` consulta `SELECT DATABASE()` e verifica a tabela `usuarios` na inicialização e na saúde. As consultas não retornam dados pessoais e não criam ou modificam tabelas. Não existem endpoints de administração do banco ou das credenciais.
 
 ## Cadastro, login e sessão
 
@@ -209,7 +221,66 @@ O cookie `JSESSIONID` é HttpOnly, SameSite=Lax, restrito a cookies e com inativ
 
 Erros seguem `{status, code, message, errors}`. Credenciais inválidas e sessão ausente retornam 401; falta de permissão ou CSRF inválido retornam 403; dados inválidos retornam 400; e-mail duplicado retorna 409; falha do banco retorna 503. As respostas não incluem hashes, SQL ou detalhes internos.
 
-GETs de `/api/health`, `/api/auth/csrf` e do namespace futuro `/api/public/**` são públicos. `/api/rh/**` exige RH ou GESTOR; `/api/gestao/**` exige GESTOR. As demais rotas exigem autenticação. Esses namespaces ainda não têm funcionalidades de negócio. Não foi habilitado CORS geral; a SPA continua usando `/api` pelo proxy do Vite.
+GETs de `/api/health`, `/api/auth/csrf` e do namespace `/api/public/**` são públicos. `/api/rh/**` exige RH ou GESTOR; `/api/gestao/**` exige GESTOR. As demais rotas exigem autenticação. O namespace `/api/public/vagas` oferece a divulgação pública e `/api/rh/vagas` reúne a gestão de vagas; `/api/gestao/**` continua reservado para uso futuro. Não foi habilitado CORS geral; a SPA continua usando `/api` pelo proxy do Vite.
+
+## Vagas — implementação local
+
+O módulo usa somente `vagas`, `vaga_requisitos` e `vaga_versoes` do schema existente. Não há inicialização ou alteração automática de tabelas. A autenticação foi publicada no commit `be7c23c8e325e2c1ef52b6f3f99662d6c057167f`; as mudanças de vagas permanecem exclusivamente locais para revisão humana.
+
+Visitantes e USUARIO consultam somente vagas PUBLICADAS. RH e GESTOR podem gerenciar todos os estados pelo namespace `/api/rh`; a política existente do Spring Security confere a conta e o perfil antes de cada acesso protegido. Não existe mecanismo paralelo de autorização.
+
+| Método e caminho | Operação |
+| --- | --- |
+| `GET /api/public/vagas?pagina=0` | Lista pública, vinte itens por página |
+| `GET /api/public/vagas/{id}` | Detalhes de vaga publicada; demais estados respondem 404 |
+| `GET /api/rh/vagas?pagina=0` | Lista administrativa, vinte itens por página |
+| `GET /api/rh/vagas/{id}` | Detalhes completos e versão para edição |
+| `POST /api/rh/vagas` | Cria RASCUNHO com versão 1 e autoria da sessão |
+| `PUT /api/rh/vagas/{id}` | Edita com `{versao, dados}` |
+| `POST /api/rh/vagas/{id}/publicar` | Publica com `{versao}` |
+| `POST /api/rh/vagas/{id}/encerrar` | Encerra com `{versao}` |
+| `POST /api/rh/vagas/{id}/arquivar` | Arquiva com `{versao}` |
+
+O objeto `dados` contém `titulo`, `area`, `descricao`, `modalidade`, `cidade`, `estado` e `requisitos`. Cada requisito contém `descricao` e `tipo` (`OBRIGATORIO` ou `DESEJAVEL`); a ordem da lista define `ordem`. O título é obrigatório mesmo em rascunho. Os limites seguem o schema, com descrição limitada a 10 mil caracteres e até cem requisitos por operação. Modalidades: `PRESENCIAL`, `HIBRIDO` e `REMOTO`.
+
+Para publicar, são obrigatórios área, descrição e modalidade; presencial/híbrido também exigem cidade e UF. A edição de uma vaga publicada mantém essas validações. Somente RASCUNHO pode ser publicado, somente PUBLICADA pode ser encerrada, e qualquer estado não arquivado pode ser arquivado. ENCERRADA e ARQUIVADA não aceitam edição nesta versão. Não há reabertura ou exclusão definitiva; a ausência de DELETE preserva também vagas com candidaturas.
+
+As escritas usam transação. A versão enviada precisa corresponder à atual; divergência retorna 409. O bloqueio da linha da vaga serializa a atualização de requisitos e a numeração do histórico; o UPDATE também exige a versão esperada. Toda alteração relevante em uma vaga que já foi publicada salva o estado anterior em `vaga_versoes`, com `versao_origem`, autor da alteração, requisitos, ordem e vínculos originais. Um envio sem mudanças não consome versão nem cria histórico. Falhas desfazem vaga, requisitos e histórico juntos.
+
+Esta interface edita requisitos textuais. Se uma vaga já tiver requisitos vinculados a `habilidades`, alterar apenas os demais dados preserva esses vínculos. A troca dessa lista é recusada com 400 para evitar apagar relações que este formulário ainda não gerencia. Nenhuma habilidade é criada ou alterada pela aplicação nesta etapa.
+
+Os DTOs públicos não incluem autoria, versão, estado interno ou datas administrativas. Os endpoints administrativos fornecem esses dados somente à equipe autorizada. Erros SQL continuam ocultos; erros de entrada retornam 400, ausência pública retorna 404 e conflitos de edição retornam 409.
+
+### Privilégios MySQL de vagas
+
+Neste ambiente, o administrador ampliou somente os privilégios abaixo, mantendo a conta de aplicação sem DDL, DELETE em vagas, alterações de histórico ou acesso global:
+
+```sql
+-- Permite criar e atualizar os dados gerenciados da vaga
+GRANT SELECT, INSERT (titulo, area, descricao, modalidade, cidade, estado, criada_por),
+UPDATE (titulo, area, descricao, modalidade, cidade, estado, status, versao, publicada_em)
+ON point_media_dev.vagas TO 'point_media_app'@'localhost';
+-- Permite substituir os requisitos da vaga editada dentro da transação
+GRANT SELECT, INSERT (vaga_id, descricao, tipo, ordem), DELETE
+ON point_media_dev.vaga_requisitos TO 'point_media_app'@'localhost';
+-- Permite consultar e acrescentar snapshots sem alterar versões existentes
+GRANT SELECT, INSERT (vaga_id, numero, versao_origem, dados, criada_por)
+ON point_media_dev.vaga_versoes TO 'point_media_app'@'localhost';
+```
+
+### Utilizar no navegador
+
+1. Inicie o backend com `mysql` e as variáveis da conta de aplicação, conforme os comandos anteriores
+2. Em outro PowerShell, execute `npm.cmd run dev` em `frontend` e abra `http://127.0.0.1:5173`
+3. Use a seção **Vagas** para listar e abrir as publicadas sem login
+4. Entre com uma conta da aplicação que tenha perfil RH ou GESTOR e escolha **Gerenciar vagas** → **Nova vaga**
+5. Salve o rascunho, abra **Editar vaga** para ajustar os dados e requisitos, e use **Publicar vaga**, **Encerrar vaga** ou **Arquivar vaga** conforme o estado
+
+O cadastro público continua criando apenas USUARIO. A atribuição de RH/GESTOR é uma operação administrativa que exige autorização para uma conta específica; não há promoção automática, conta permanente de demonstração nem endpoint de promoção. As contas fictícias usadas na validação foram removidas.
+
+A sessão compartilhada entre conta e vagas tem uma única origem na tela que reúne os painéis. Um 401 atual recebido em vagas remove a autenticação dos dois painéis. 403 bloqueia a operação sem encerrar a conta; 503, timeout e falha de rede também não confirmam logout. Chamadas antigas não podem limpar uma sessão criada por um novo login nem restaurar dados administrativos após a saída. A verificação por foco preserva as respostas do formulário da mesma sessão.
+
+Erros 400 aproveitam as mensagens por campo do backend, exibidas junto aos campos e requisitos correspondentes, tanto na criação quanto na edição. Os dados preenchidos são preservados. Conflitos preservam o formulário e oferecem **Recarregar vaga e descartar alterações**. Timeout e 503 não repetem escritas; atualize a consulta para confirmar o resultado antes de tentar novamente. Estados de carregamento, lista vazia, falha e acesso negado aparecem no painel.
 
 ## Verificação
 
@@ -243,7 +314,28 @@ O teste de conexão anterior continua somente de leitura. O novo teste real de a
 
 `AuthSecurityTest` cobre cadastro, validação, duplicidade, BCrypt, login, logout, renovação de CSRF, fixação de sessão, usuário inativo e políticas de perfil. Também verifica inativação/rebaixamento sem consultar `/me`, rejeição de autoridades antigas, falha/recuperação de banco, logout durante a indisponibilidade e uma única consulta para autorização e `/me`. Os endpoints de prova de autorização existem somente nessa classe de teste, não no artefato da aplicação.
 
-`npm.cmd test` usa o executor nativo do Node e a remoção de tipos TypeScript, sem dependências adicionais. Os testes exercitam a lógica de sessão usada pelo painel e o cliente HTTP real com `fetch` controlado: timeout, rede, 503, 401, falha após login, recuperação e logout com renovação de CSRF. Não conectam ao MySQL nem substituem a regressão HTTP real do backend.
+`npm.cmd test` usa o executor nativo do Node e a remoção de tipos TypeScript, sem dependências adicionais. Os testes exercitam a lógica de sessão usada pelo painel e os clientes HTTP com `fetch` controlado: timeout, rede, 503, 401, falha após login, recuperação, logout, versão na edição, campos permitidos e renovação de CSRF. Não conectam ao MySQL nem substituem a regressão HTTP real do backend.
+
+`VagaServiceTest` cobre as regras sem banco. `MySqlVagaTest`, habilitado pela mesma variável `POINT_MEDIA_MYSQL_TESTS=true`, cobre os fluxos HTTP reais, concorrência com duas escritas simultâneas, snapshots e rollback após falha de CHECK no MySQL. O cenário de vaga publicada mantém a primeira transação aberta até a segunda tentar acessar a mesma vaga, confirma um 200 e um 409 e verifica conteúdo, requisitos, autoria e o único histórico resultante. As rotas reais também são verificadas com visitante/USUARIO e escritas de RH sem CSRF ou com token inválido. Cria suas próprias contas/vagas e, em um cenário, uma habilidade fictícia para conferir preservação de vínculos. O login-path administrativo é usado somente na preparação/limpeza desses fixtures, por IDs próprios; não altera dados existentes nem o schema. Sem a variável, os testes de MySQL são ignorados.
+
+Para executar somente os testes de vagas com MySQL, configure as mesmas variáveis de conexão e `POINT_MEDIA_MYSQL_TESTS=true`, e use `mvn.cmd verify '-Dtest=VagaServiceTest,MySqlVagaTest'` em `backend`. A limpeza continua restrita aos dados fictícios preparados pelos próprios testes.
+
+`tests/vagas-ui.test.mjs` contém os testes dos componentes no Edge, com respostas HTTP controladas, sem banco. Eles usam uma instalação de Playwright já disponível fora do projeto, sem adicionar pacotes ao frontend. Com o Vite iniciado, execute em outro PowerShell:
+
+```powershell
+Set-Location C:\Projetos\point-media-novo\frontend
+# Informe o index.mjs de uma instalação de Playwright já disponível
+$env:POINT_MEDIA_PLAYWRIGHT_MODULE = 'C:\caminho\existente\playwright\index.mjs'
+# Use a porta do Vite que está em execução
+$env:POINT_MEDIA_FRONTEND_URL = 'http://127.0.0.1:5173'
+try {
+    node --test tests/vagas-ui.test.mjs
+} finally {
+    Remove-Item Env:POINT_MEDIA_PLAYWRIGHT_MODULE, Env:POINT_MEDIA_FRONTEND_URL -ErrorAction SilentlyContinue
+}
+```
+
+O teste de navegador é separado de `npm.cmd test`. Sem `POINT_MEDIA_PLAYWRIGHT_MODULE`, os cenários são ignorados e isso não equivale a uma aprovação. Ele cobre 401 compartilhado, 403/503/rede/timeout sem logout, respostas antigas após saída e novo login da mesma conta, resposta antiga de `/me`, falha durante logout e erros por campo com preservação dos dados durante revalidação por foco.
 
 Os resultados efetivamente executados estão no registro de validação; um teste MySQL ignorado por padrão não significa aprovação de uma conexão real.
 

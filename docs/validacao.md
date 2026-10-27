@@ -470,3 +470,174 @@ O hash do SQL oficial permaneceu `37D548EDA30E9DD6042EC6ABF4C4FFCCA27F4CDD0D0B66
 Os arquivos manuais de Java, TypeScript, HTML, Maven e Properties receberam comentários curtos em português, acima de métodos, ações, decisões, segurança, consultas e testes, sem pontuação final. JSON, lockfiles, artefatos gerados e o schema aprovado não foram comentados. A comparação dos 28 arquivos examinados, desconsiderando somente linhas de comentário, confirmou conteúdo funcional idêntico ao anterior.
 
 A validação única antes da publicação passou: `npm.cmd test` (11 testes), `npm.cmd run build` (TypeScript e Vite) e `mvn.cmd -B -ntp verify` (24 testes executados, 2 MySQL opt-in ignorados, zero falhas/erros). A regressão real MySQL anterior foi preservada e não repetida para comentários. `git ls-remote` confirmou `origin/main` em `e93550eb5eed594831e4c7af04d8a9ccf30ce800` antes da publicação. O SQL mantém o hash aprovado.
+
+## Publicação da autenticação e módulo de vagas local — 26/10/2026
+
+### Publicação autorizada
+
+A autenticação e os comentários foram publicados em main no commit be7c23c8e325e2c1ef52b6f3f99662d6c057167f, com a mensagem “feat: implementa autenticação e controle de acesso”. O push foi confirmado por git ls-remote, que devolveu o mesmo identificador em origin/main. O commit anterior e93550eb5eed594831e4c7af04d8a9ccf30ce800 foi preservado. O commit contém 30 arquivos; nenhum arquivo de vagas existia nessa publicação.
+
+A passagem de comentários alterou 26 dos 28 arquivos manuais examinados, usando português brasileiro curto, sem ponto final, acima de métodos, blocos, decisões, validações, SQL, HTTP, estados, segurança e cenários. A comparação contra os arquivos anteriores, removendo somente linhas de comentário, confirmou ausência de alteração funcional nessa fase. Nenhum JSON, lockfile, arquivo gerado ou SQL aprovado foi comentado.
+
+Arquivos que receberam comentários:
+
+```text
+backend/src/main/java/br/com/pointmedia/auth/AuthController.java
+backend/src/main/java/br/com/pointmedia/auth/AuthService.java
+backend/src/main/java/br/com/pointmedia/auth/SessionAuthorizationManager.java
+backend/src/main/java/br/com/pointmedia/config/ApiExceptionHandler.java
+backend/src/main/java/br/com/pointmedia/config/SecurityConfig.java
+backend/src/main/java/br/com/pointmedia/database/MySqlConnectionCheck.java
+backend/src/main/java/br/com/pointmedia/health/HealthController.java
+backend/src/main/java/br/com/pointmedia/PointMediaApplication.java
+backend/src/main/java/br/com/pointmedia/usuarios/UsuarioRepository.java
+backend/src/main/resources/application-mysql.properties
+backend/src/main/resources/application.properties
+backend/src/test/java/br/com/pointmedia/auth/AuthSecurityTest.java
+backend/src/test/java/br/com/pointmedia/auth/MySqlAuthTest.java
+backend/src/test/java/br/com/pointmedia/database/MySqlConnectionTest.java
+backend/src/test/java/br/com/pointmedia/health/HealthControllerTest.java
+backend/src/test/java/br/com/pointmedia/health/HealthEndpointTest.java
+frontend/src/app/theme.ts
+frontend/src/features/auth/api.ts
+frontend/src/features/auth/AuthPanel.tsx
+frontend/src/features/auth/session.ts
+frontend/src/features/health/HealthPage.tsx
+frontend/src/main.tsx
+frontend/tests/auth-session.test.ts
+frontend/vite.config.ts
+frontend/index.html
+backend/pom.xml
+```
+
+### Implementação de vagas
+
+O módulo usa somente as estruturas aprovadas vagas, vaga_requisitos e vaga_versoes. As leituras públicas filtram PUBLICADA no SQL e retornam DTOs sem autoria, versão, estado interno ou datas administrativas. Rascunhos, encerradas e arquivadas respondem 404 publicamente. As rotas /api/rh/vagas usam a política existente de RH/GESTOR e a revalidação da sessão; USUARIO não escreve nem consulta dados administrativos.
+
+Rascunhos começam com versão 1. A publicação exige título válido, área, descrição e modalidade; presencial/híbrido também exigem cidade e UF. A edição publicada mantém esses requisitos. ENCERRADA e ARQUIVADA ficam somente para consulta. Arquivar nunca exclui dados. A API não fornece DELETE de vagas e a conta SQL não recebeu esse privilégio, preservando vagas mesmo quando tiverem candidaturas.
+
+As escritas são transacionais. A linha da vaga é bloqueada para serializar alterações de requisitos/histórico; a versão enviada é conferida e o UPDATE também a exige. Conflitos retornam 409. O histórico guarda o estado anterior de uma vaga que já foi publicada, incluindo versão de origem, autoria da alteração, requisitos, ordem e habilidade_id original. Envio sem mudanças não incrementa versão. Edição só de dados da vaga mantém os requisitos intactos; substituição de requisitos vinculados a habilidades é recusada para não apagar relações que a interface textual ainda não gerencia.
+
+A interface foi acrescentada à tela existente com os tokens institucionais. Visitantes consultam a lista e os detalhes. RH/GESTOR têm formulário de rascunho/edição, requisitos obrigatórios/desejáveis e ações de estado. São tratados carregamento, lista vazia, erros e acesso negado. Um conflito preserva o formulário até uma recarga explícita. O cliente envia somente os campos editáveis; timeout/503 não repetem escritas. Resultados administrativos de chamadas antigas são descartados ao mudar a sessão. Nenhuma homepage definitiva, candidatura, currículo ou matching foi implementado.
+
+### Operações no MySQL
+
+O destino point_media_dev foi confirmado antes dos GRANTs. Foram acrescentados somente:
+
+- vagas: SELECT, INSERT em titulo/area/descricao/modalidade/cidade/estado/criada_por e UPDATE em titulo/area/descricao/modalidade/cidade/estado/status/versao/publicada_em
+- vaga_requisitos: SELECT, INSERT em vaga_id/descricao/tipo/ordem e DELETE para substituir os requisitos da vaga editada
+- vaga_versoes: SELECT e INSERT em vaga_id/numero/versao_origem/dados/criada_por
+
+SHOW GRANTS confirmou esses privilégios. Não houve DDL, privilégios globais, DELETE de vagas, UPDATE/DELETE de histórico, alteração de credenciais ou uso de root pelo Spring. A conta não recebeu acesso novo a habilidades; apenas um fixture dessa tabela foi preparado pelo administrador no teste de integridade.
+
+Os testes criaram suas próprias contas com UUID em example.invalid e vagas próprias. A limpeza usa os IDs criados, remove primeiro históricos/requisitos das próprias vagas e depois as vagas/contas. O teste de vínculo também remove sua própria habilidade fictícia. Nenhum dado existente foi usado como fixture.
+
+### Resultados reais
+
+| Verificação | Resultado |
+| --- | --- |
+| Preparação da publicação | npm test: 11 aprovados; build TypeScript/Vite aprovado; Maven verify: 24 aprovados, 2 MySQL opcionais ignorados; nenhuma alteração funcional na passagem de comentários |
+| Suíte integrada com MySQL após o módulo inicial | 37 testes, zero falhas, zero erros e zero ignorados; BUILD SUCCESS; inclui todos os testes anteriores, sete unitários de vagas e quatro cenários MySQL de vagas; log local backend/target/vagas-verify.log |
+| Verificação final direcionada de vagas | 12 testes aprovados: sete unitários e cinco cenários MySQL, incluindo a proteção de vínculos; zero falhas/erros/skips; BUILD SUCCESS e JAR gerado; log backend/target/vagas-integridade-final.log |
+| Concorrência real | Duas edições HTTP simultâneas da mesma versão resultaram em um 200 e um 409; somente uma atualização persistida |
+| Rollback real | Falha de CHECK ao inserir requisito depois da atualização/histórico reverteu vaga, requisitos e histórico; a versão e o conteúdo anteriores permaneceram iguais |
+| Visibilidade e autorização | Visitante lê publicada, rascunho fica oculto, RH cria, USUARIO não cria/edita, GESTOR administra, publicação incompleta é recusada e respostas públicas não contêm campos administrativos |
+| Histórico | Conteúdo e requisitos anteriores preservados, versao_origem correta; encerramento/arquivamento preservam o histórico; vínculo habilidade_id incluído no snapshot |
+| Entrada e exclusão | Parâmetro/identificador inválido retorna 400; DELETE administrativo de vaga retorna 405; edição de arquivada e transições inválidas recusadas |
+| Frontend final | 17 testes nativos do Node aprovados; TypeScript e Vite aprovados; nenhum pacote adicionado ou atualizado |
+| Navegador com MySQL real pelo proxy | Criação, publicação inválida/válida, edição com requisitos, detalhes públicos, conflito 409 com formulário preservado, recarga explícita, histórico no MySQL, encerramento, arquivamento e logout passaram; nenhum erro React capturado |
+| Limpeza | Fixtures dos testes e do navegador removidos; servidores temporários encerrados |
+
+As falhas intermediárias foram investigadas: o cliente administrativo de limpeza precisava selecionar explicitamente point_media_dev; os fixtures da primeira execução foram identificados e removidos pelos IDs exatos 6 a 17, sem remover outros usuários. O CHECK do MySQL foi traduzido como UncategorizedSQLException, que continua sendo DataAccessException e provoca rollback; a asserção passou a aceitar essa base sem depender do tradutor do driver. No navegador, a primeira edição enviava campos administrativos junto com os dados e recebeu 400; o cliente passou a projetar somente os campos editáveis, com teste de regressão. As execuções finais acima passaram.
+
+### Inventário local de vagas
+
+Criados:
+
+```text
+backend/src/main/java/br/com/pointmedia/vagas/Vaga.java
+backend/src/main/java/br/com/pointmedia/vagas/VagaController.java
+backend/src/main/java/br/com/pointmedia/vagas/VagaRepository.java
+backend/src/main/java/br/com/pointmedia/vagas/VagaService.java
+backend/src/test/java/br/com/pointmedia/vagas/MySqlVagaTest.java
+backend/src/test/java/br/com/pointmedia/vagas/VagaServiceTest.java
+frontend/src/features/vagas/api.ts
+frontend/src/features/vagas/VagaForm.tsx
+frontend/src/features/vagas/VagasPanel.tsx
+frontend/tests/vagas-api.test.ts
+```
+
+Modificados após o push: README.md, docs/validacao.md, backend/src/main/java/br/com/pointmedia/config/ApiExceptionHandler.java, frontend/package.json, frontend/src/features/auth/AuthPanel.tsx e frontend/src/features/health/HealthPage.tsx. AuthPanel comunica o estado da sessão à tela para mostrar as ações adequadas; não substitui a autorização do backend.
+
+### Limites para revisão
+
+O build Vite passou com aviso de chunk principal pouco acima de 500 kB, sem bloqueio de compilação. A divisão do bundle pode ser avaliada antes da publicação. Não há conta RH permanente de demonstração: o administrador precisa autorizar o perfil de uma conta específica para utilização da gestão; nenhum usuário existente foi promovido nesta tarefa. A interface atual gerencia requisitos textuais e impede substituir listas vinculadas a habilidades.
+
+Permanecem as pendências de pré-publicação já registradas: mitigação da enumeração de e-mails por 409, limites de tentativas, limite real de corpo JSON, HTTPS/cookie Secure e validação da identidade TLS do MySQL. Não foram implementadas nesta etapa. Sessões continuam em memória. Nenhuma tabela, versão de dependência, lockfile, credencial ou arquivo do projeto antigo foi alterado.
+
+O schema oficial conserva o SHA-256 37D548EDA30E9DD6042EC6ABF4C4FFCCA27F4CDD0D0B66F6DA9DA495CB8E2253. As alterações de vagas permanecem locais e fora da staging area; nenhum commit ou push foi feito após a publicação da autenticação.
+
+A conferência final confirmou zero contas com os prefixos exclusivos dos testes de vagas e zero habilidades fictícias desses testes. Não há listeners nas portas 8080/5173; o MySQL permaneceu ativo. HEAD e origin/main continuam em be7c23c8e325e2c1ef52b6f3f99662d6c057167f, com seis arquivos modificados e dez novos apenas no workspace. O índice está vazio e git diff --check passou.
+
+
+## Ajustes finais após a revisão de vagas — 26/10/2026
+
+### Sessão compartilhada e formulário
+
+A tela que reúne conta e vagas passou a manter uma única instância de `useSession`. `AuthPanel` recebe esse controle e não mantém outra cópia editável da sessão. `VagasPanel` comunica um 401 atual ao mesmo controle; a conta e os comandos administrativos são atualizados juntos. 403, 503, timeout e rede não confirmam logout. O aviso anterior de sessão ativa deixa de aparecer quando a sessão não está autenticada.
+
+As ações de autenticação e o 401 confirmado invalidam marcas de chamadas anteriores. As respostas de vagas verificam essa marca e a seleção atual antes de alterar a tela. Um 401 já em trânsito não encerra um novo login da mesma conta; uma resposta administrativa antiga também não reaparece após logout. Consultas antigas de `/me` não restauram uma sessão invalidada depois por vagas. A revalidação por foco tem seu próprio controle de ordem e não descarta respostas do formulário da mesma sessão.
+
+As mensagens de validação já fornecidas em `errors` são exibidas em `Field.ErrorText`, ao lado de título, área, descrição, modalidade, cidade, UF e de cada descrição/classificação de requisito. O formulário aceita os nomes usados na criação e o prefixo `dados.` usado na edição. A resposta 400 preserva o conteúdo digitado. Incluir/remover requisitos limpa mensagens que apontavam posições anteriores da lista.
+
+Foram completados comentários dos blocos de ação relacionados em português simples, sem pontuação final. O README deixou de apresentar os namespaces de vagas como futuros e passou a explicar a sessão compartilhada, os erros por campo e os testes direcionados.
+
+### Testes novos de integridade e segurança
+
+`MySqlVagaTest.concorrenciaPublicadaPreservaRequisitosEUmUnicoHistorico` cria sua própria vaga, publica e envia duas edições HTTP com a mesma versão. Um observador de repositório exclusivo do teste mantém a primeira transação aberta depois do bloqueio SQL real até a segunda tentativa entrar no repositório. As duas chamadas executam o código SQL original; não há simulação do banco nem mudança na aplicação.
+
+O cenário confirma um 200 e um 409 com `CONFLITO_VERSAO`, incremento de uma única versão, conteúdo e dois requisitos apenas da tentativa vencedora, ordem/classificação corretas e exatamente um histórico com número 1, versão de origem e autor da alteração vencedora. O snapshot contém título, estado, versão e os requisitos anteriores com seus IDs, ordem e vínculo original. A tentativa perdedora não deixa histórico nem alterações parciais.
+
+`MySqlVagaTest.rotasReaisExigemPerfilECsrfSemAlterarAVaga` verifica leitura administrativa e transições negadas a visitante/USUARIO, além de criação, edição e transições de RH sem CSRF e com token inválido. Confere a resposta `CSRF_INVALIDO`, a manutenção de vaga/requisitos/versão e a ausência de histórico dessas tentativas. Nenhuma rota artificial foi adicionada.
+
+O mecanismo de limpeza existente continuou removendo somente os dados ligados aos IDs fictícios criados em cada cenário. Não foram alterados schema, credenciais ou privilégios.
+
+### Execuções finais
+
+| Verificação | Resultado real |
+| --- | --- |
+| `mvn.cmd -B -ntp verify '-Dtest=VagaServiceTest,MySqlVagaTest'`, com MySQL opt-in | BUILD SUCCESS, 14 testes aprovados: 7 unitários e 7 cenários reais de MySQL, zero falhas/erros/skips; JAR gerado; log local `backend/target/vagas-ajustes-final.log` |
+| `npm.cmd test` | 17 testes aprovados, zero falhas ou ignorados |
+| `npm.cmd run build` | TypeScript e Vite aprovados, 1968 módulos; bundle principal 502,75 kB / gzip 140,70 kB, com o aviso não bloqueante de tamanho já conhecido |
+| `node --test tests/vagas-ui.test.mjs`, com Playwright disponível no ambiente e Edge | 11 testes aprovados, zero falhas ou ignorados, sem erros React capturados |
+| Cenários de interface | 401 compartilhado; 403/503/rede/timeout preservando a conta e permitindo logout; `/me` antigo após invalidação; 401 e 200 antigos após novo login da mesma conta; 401 antigo durante logout que responde 503; 400 na criação e edição com mensagens por campo e valores preservados mesmo durante revalidação por foco |
+| Leitura final no MySQL | Destino `point_media_dev`; zero contas `pm-vaga-%@example.invalid` e zero habilidades `pm-vaga-habilidade-%` restantes |
+
+A primeira execução do novo teste de snapshot falhou na igualdade entre árvores JSON por tipos numéricos diferentes após a releitura do MySQL. A comparação passou a conferir os valores de cada campo, incluindo IDs e ordem, sem depender do tipo de nó numérico. A execução final dos 14 testes passou.
+
+O primeiro acesso do navegador ao Vite iniciado no ambiente restrito não conseguiu conectar. O servidor temporário foi reiniciado em contexto acessível ao Edge. A porta 5173 já estava ocupada; a validação utilizou 5174 sem interromper o processo existente. A execução final dos 11 testes passou, o navegador e o Vite temporários foram encerrados, e não restou listener em 5174. O backend dos testes usou porta aleatória e foi encerrado ao concluir o processo Maven.
+
+Os testes de interface ficam separados de `npm.cmd test` e requerem `POINT_MEDIA_PLAYWRIGHT_MODULE` apontando para uma instalação já disponível. Não houve instalação nem dependência adicionada ao projeto. Sem essa variável, eles são ignorados; o README distingue esse caso de uma execução aprovada. As respostas HTTP desses testes são controladas; a integridade transacional foi verificada separadamente no MySQL real.
+
+### Arquivos desta etapa
+
+Modificados em relação ao início destes ajustes:
+
+- `frontend/src/features/auth/AuthPanel.tsx`
+- `frontend/src/features/health/HealthPage.tsx`
+- `frontend/src/features/vagas/VagasPanel.tsx`
+- `frontend/src/features/vagas/VagaForm.tsx`
+- `backend/src/test/java/br/com/pointmedia/vagas/MySqlVagaTest.java`
+- `README.md`
+- `docs/validacao.md`
+
+Criados:
+
+- `frontend/src/features/auth/useSession.ts`
+- `frontend/tests/vagas-ui.test.mjs`
+
+As demais alterações locais do módulo de vagas anteriores a esta tarefa foram preservadas. Não houve alteração de lógica de produção do backend, dependências, versões ou lockfile nesta etapa. O SQL oficial conserva o SHA-256 `37D548EDA30E9DD6042EC6ABF4C4FFCCA27F4CDD0D0B66F6DA9DA495CB8E2253`.
+
+Permanecem as pendências já registradas para exposição pública: enumeração de contas por 409, limites de tentativas e de corpo JSON, HTTPS/cookie Secure e identidade TLS do MySQL. A edição textual continua recusando substituição de requisitos vinculados a habilidades. O aviso de tamanho do bundle permanece para avaliação posterior.
+
+Nenhum commit, push ou alteração da staging area foi realizado. Os ajustes continuam locais para revisão humana.

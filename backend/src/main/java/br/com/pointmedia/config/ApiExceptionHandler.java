@@ -14,9 +14,27 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
+
+    // Recusa identificadores e parâmetros que não podem ser convertidos
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ErrorResponse> invalidParameter() {
+        return ResponseEntity.badRequest().body(error(HttpStatus.BAD_REQUEST, "DADOS_INVALIDOS",
+                "Informe identificadores e parâmetros válidos."));
+    }
+
+    // Devolve os erros esperados das operações de vagas sem detalhes de SQL
+    @ExceptionHandler(ResponseStatusException.class)
+    ResponseEntity<ErrorResponse> operation(ResponseStatusException exception) {
+        var status = HttpStatus.valueOf(exception.getStatusCode().value());
+        String code = status == HttpStatus.CONFLICT ? "CONFLITO_VERSAO" :
+                status == HttpStatus.NOT_FOUND ? "NAO_ENCONTRADO" : "DADOS_INVALIDOS";
+        return ResponseEntity.status(status).body(error(status, code, exception.getReason()));
+    }
 
     public record ErrorResponse(int status, String code, String message, Map<String, String> errors) {
     }

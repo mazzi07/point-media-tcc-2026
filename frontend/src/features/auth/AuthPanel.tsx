@@ -3,19 +3,20 @@ import type { FormEvent } from 'react'
 import { Box, Button, Field, Flex, Heading, Input, Stack, Text } from '@chakra-ui/react'
 import * as auth from './api'
 import { signIn, signOut, verifySession } from './session'
-import type { SessionState } from './session'
+import type { SessionControl } from './useSession'
 
 // Controla o acesso à conta e o estado da sessão
-export function AuthPanel() {
-  const [session, setSession] = useState<SessionState>({ status: 'unverified', user: null })
+export function AuthPanel({ control }: { control: SessionControl }) {
+  const { session, changing: pending, begin, update, finish, capture } = control
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [checking, setChecking] = useState(true)
-  const [pending, setPending] = useState(false)
   const [fields, setFields] = useState<Record<string, string>>({})
-  const [notice, setNotice] = useState<{ error: boolean; message: string } | null>(null)
+  const [notice, setNotice] = useState<{ error: boolean; message: string; requiresSession?: boolean } | null>(null)
   const sessionRef = useRef(session)
   const busy = useRef(false)
-  const generation = useRef(0)
+  const inspections = useRef(0)
+  // Permite que as consultas assíncronas leiam o estado compartilhado mais recente
+  sessionRef.current = session
 
   // Acompanha a sessão enquanto o painel está aberto
   useEffect(() => {
@@ -25,12 +26,12 @@ export function AuthPanel() {
     async function inspectSession() {
       // Evita disputar a sessão com uma ação em andamento
       if (busy.current) return
-      const inspection = ++generation.current
+      const inspection = ++inspections.current
+      const sessionRequest = capture()
       const previous = sessionRef.current
       const next = await verifySession(previous)
       // Ignora respostas de consultas antigas ou de um painel fechado
-      if (!active || inspection !== generation.current) return
-      updateSession(next)
+      if (!active || inspection !== inspections.current || !update(next, sessionRequest)) return
       // Avisa quando uma sessão antes confirmada deixou de ser válida
       if (next.status === 'anonymous' && previous.user) {
         setNotice({ error: true, message: 'Sua sessão expirou. Entre novamente.' })
@@ -48,28 +49,21 @@ export function AuthPanel() {
       active = false
       window.removeEventListener('focus', inspectSession)
     }
-  }, [])
-
-  // Atualiza o estado exibido e a referência usada nas consultas
-  function updateSession(next: SessionState) {
-    sessionRef.current = next
-    setSession(next)
-  }
+  }, [capture, update])
 
   // Bloqueia ações simultâneas e limpa mensagens anteriores
   function beginAction() {
     busy.current = true
-    generation.current++
     setChecking(false)
-    setPending(true)
     setFields({})
     setNotice(null)
+    return begin()
   }
 
   // Libera os controles após a operação
-  function endAction() {
+  function endAction(request: number) {
     busy.current = false
-    setPending(false)
+    finish(request)
   }
 
   // Envia os dados de cadastro ou login
@@ -79,7 +73,7 @@ export function AuthPanel() {
     const data = new FormData(form)
     const email = String(data.get('email') ?? '')
     const senha = String(data.get('senha') ?? '')
-    beginAction()
+    const request = beginAction()
     try {
       // Escolhe entre criar a conta e iniciar uma sessão
       if (mode === 'register') {
@@ -91,7 +85,7 @@ export function AuthPanel() {
       } else {
         // Consulta a sessão após a tentativa de login
         const next = await signIn(email, senha)
-        updateSession(next)
+        if (!update(next, request)) return
         if (next.status === 'anonymous') {
           setNotice({ error: true, message: 'Sua sessão expirou. Entre novamente.' })
         }
@@ -101,44 +95,44 @@ export function AuthPanel() {
     } catch (error) {
       // Limpa a conta somente quando o servidor confirma a sessão inválida
       if (error instanceof auth.AuthError && error.status === 401) {
-        updateSession({ status: 'anonymous', user: null })
+        update({ status: 'anonymous', user: null }, request)
       }
       setNotice({ error: true, message: errorMessage(error) })
       if (error instanceof auth.AuthError) setFields(error.fields)
     } finally {
-      endAction()
+      endAction(request)
     }
   }
 
   // Solicita a saída e só confirma após resposta do servidor
   async function logout() {
-    beginAction()
+    const request = beginAction()
     try {
       const next = await signOut(sessionRef.current)
-      updateSession(next)
+      if (!update(next, request)) return
       // Avisa quando uma sessão antes confirmada deixou de ser válida
       if (next.status === 'anonymous') {
         setMode('login')
         setNotice({ error: false, message: 'Você saiu da sua conta.' })
       }
     } finally {
-      endAction()
+      endAction(request)
     }
   }
 
   // Tenta confirmar novamente a sessão atual
   async function confirmSession() {
-    beginAction()
+    const request = beginAction()
     try {
       const next = await verifySession(sessionRef.current)
-      updateSession(next)
+      if (!update(next, request)) return
       // Apresenta o resultado quando a sessão pôde ser conferida
       if (next.status !== 'unverified') {
         setNotice({ error: next.status === 'anonymous', message: next.status === 'anonymous'
-          ? 'Sua sessão expirou. Entre novamente.' : 'Sua sessão está ativa.' })
+          ? 'Sua sessão expirou. Entre novamente.' : 'Sua sessão está ativa.', requiresSession: next.status === 'authenticated' })
       }
     } finally {
-      endAction()
+      endAction(request)
     }
   }
 
@@ -150,14 +144,15 @@ export function AuthPanel() {
     <Box as="section" aria-labelledby="auth-heading" mt="8" borderWidth="1px"
       borderColor="gray.200" p={{ base: '5', md: '8' }}>
       <Heading id="auth-heading" as="h2" size="lg" mb="3">Sua conta Point Media</Heading>
-      {notice && (
+      {/* Só mantém a confirmação de sessão ativa enquanto ela continuar autenticada */}
+      {notice && (!notice.requiresSession || session.status === 'authenticated') && (
         <Box role={notice.error ? 'alert' : 'status'} mb="5" p="3"
           bg={notice.error ? 'red.50' : 'gray.50'} borderLeftWidth="3px"
           borderColor={notice.error ? 'red.600' : 'brand.blue'}>
           <Text fontSize="sm">{notice.message}</Text>
         </Box>
       )}
-      {checking && !user ? <Text role="status">Consultando sessão…</Text> : session.status !== 'anonymous' ? (
+      {checking && !user && session.status === 'unverified' ? <Text role="status">Consultando sessão…</Text> : session.status !== 'anonymous' ? (
         <Stack gap="4">
           {session.status === 'unverified' && (
             <Text role="alert" fontSize="sm">

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Box, Button, Container, Flex, Heading, Text } from '@chakra-ui/react'
 import { AuthPanel } from '../auth/AuthPanel'
+import { useSession } from '../auth/useSession'
+import { VagasPanel } from '../vagas/VagasPanel'
 
 type ConnectionStatus = 'loading' | 'up' | 'error'
 
@@ -8,6 +10,7 @@ type ConnectionStatus = 'loading' | 'up' | 'error'
 export function HealthPage() {
   const [status, setStatus] = useState<ConnectionStatus>('loading')
   const [attempt, setAttempt] = useState(0)
+  const sessionControl = useSession()
 
   // Verifica a conexão ao abrir a tela ou tentar novamente
   useEffect(() => {
@@ -36,11 +39,11 @@ export function HealthPage() {
           throw new Error('Resposta de saúde inesperada.')
         }
 
-        // Confere o formato e o estado devolvidos pelo backend
+        // Mostra a conexão confirmada se a tela ainda estiver aberta
         if (!controller.signal.aborted) setStatus('up')
       // Mostra indisponibilidade sem atualizar uma tela já fechada
       } catch {
-        // Confere o formato e o estado devolvidos pelo backend
+        // Mostra a falha se a consulta ainda pertencer à tela
         if (!controller.signal.aborted) setStatus('error')
       }
     }
@@ -88,7 +91,8 @@ export function HealthPage() {
             Verificar novamente
           </Button>
         </Box>
-        <AuthPanel />
+        <AuthPanel control={sessionControl} />
+        <VagasPanel control={sessionControl} />
       </Container>
     </Box>
   )
